@@ -1,0 +1,11 @@
+1. liệt kê danh sách
+vinalink-auto$: docker ps
+CONTAINER ID   IMAGE           COMMAND           CREATED         STATUS         PORTS     NAMES
+fc191628cdf3   vinalink-auto   "node index.js"   2 minutes ago   Up 2 minutes             awesome_elion
+
+2. chạy docker
+docker run -it --rm vinalink-auto 
+
+3. hủy lệnh
+docker rm -r f <CONTAINER ID>
+docker rm -r f fc191628cdf3 

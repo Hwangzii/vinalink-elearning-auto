@@ -1,0 +1,15 @@
+Vinalink Auto Project Structure
+.
+├── Dockerfile
+├── hazii_note
+│   ├── note.txt
+│   └── vinalink-auto-structure.txt
+├── index.js
+├── key
+│   ├── credentials.json
+│   ├── TimeHooker.txt
+│   └── vinalink-auto-92e59245307e.json
+├── package.json
+└── package-lock.json
+
+3 directories, 9 files
