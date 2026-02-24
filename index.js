@@ -1,103 +1,159 @@
-require('dotenv').config(); // Nạp cấu hình từ file .env
+require('dotenv').config();
+
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-// --- CẤU HÌNH BIẾN MÔI TRƯỜNG ---
-const isDev = process.env.NODE_ENV;
+// Xác định môi trường một cách rõ ràng
+const NODE_ENV = (process.env.NODE_ENV || 'development').trim().toLowerCase();
+const IS_DEV = NODE_ENV === 'development';
+const IS_PROD = NODE_ENV === 'production' || NODE_ENV === 'prod';
 
+// Các đường dẫn
 const CREDENTIALS_PATH = path.join(__dirname, 'key', 'credentials.json');
 const TIMEHOOKER_PATH = path.join(__dirname, 'TimeHooker.txt');
 const SPREADSHEET_ID = '15o-NJOjYFxeuRPI6iqQcfQEJHIFAT-RfQyMezVoKIn4';
 
-const creds = require(CREDENTIALS_PATH);
-const auth = new JWT({
+// Khởi tạo Google Auth
+let auth;
+try {
+  const creds = require(CREDENTIALS_PATH);
+  auth = new JWT({
     email: creds.client_email,
     key: creds.private_key,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-});
+  });
+} catch (err) {
+  console.error('Không thể đọc file credentials.json:', err.message);
+  process.exit(1);
+}
 
 async function runBot() {
-    const doc = new GoogleSpreadsheet(SPREADSHEET_ID, auth);
+  const doc = new GoogleSpreadsheet(SPREADSHEET_ID, auth);
+
+  try {
     await doc.loadInfo();
     const sheet = doc.sheetsByIndex[0];
 
-    // Log trạng thái để bạn biết mình đang ở môi trường nào
     console.log(`\n============================================`);
-    console.log(`🚀 CHẾ ĐỘ: ${isDev ? 'DEVELOPMENT (CÓ UI)' : 'PRODUCTION (CHẠY NGẦM)'}`);
-    console.log(`📊 Theo dõi Sheet: "${doc.title}"`);
+    console.log(`  MÔI TRƯỜNG     : ${IS_DEV ? 'DEVELOPMENT' : 'PRODUCTION'}`);
+    console.log(`  Browser         : ${IS_DEV ? 'CÓ HIỂN THỊ (visible)' : 'ẨN (headless)'}`);
+    console.log(`  Tốc độ          : ${IS_DEV ? 'CHẬM (slowMo 150ms)' : 'NHANH'}`);
+    console.log(`  Sheet đang theo dõi : "${doc.title}"`);
     console.log(`============================================\n`);
 
     while (true) {
-        try {
-            const rows = await sheet.getRows();
-            for (let row of rows) {
-                const status = row.get('STATUS');
-                if (status === 'login') {
-                    const user = row.get('ID');
-                    const pass = row.get('PASS');
-                    
-                    row.set('STATUS', 'processing...');
-                    await row.save();
+      try {
+        const rows = await sheet.getRows();
 
-                    const result = await performLoginAndGetName(user, pass);
+        for (const row of rows) {
+          const status = row.get('STATUS')?.trim();
 
-                    if (result.success) {
-                        console.log(`✅ [${user}] Đăng nhập thành công: ${result.fullName}`);
-                        row.set('STATUS', 'success');
-                        row.set('FULLNAME', result.fullName);
-                    } else {
-                        console.log(`❌ [${user}] Thất bại: ${result.error}`);
-                        row.set('STATUS', 'error');
-                    }
-                    await row.save();
-                }
+          if (status === 'login') {
+            const user = row.get('ID')?.toString().trim();
+            const pass = row.get('PASS')?.toString().trim();
+
+            if (!user || !pass) {
+              console.warn(`Dòng có STATUS=login nhưng thiếu ID hoặc PASS`);
+              continue;
             }
-        } catch (err) {
-            console.error("⚠️ Lỗi hệ thống:", err.message);
+
+            row.set('STATUS', 'processing...');
+            await row.save();
+
+            const result = await performLoginAndGetName(user, pass);
+
+            if (result.success) {
+              console.log(`✅ [${user}] Đăng nhập thành công → ${result.fullName}`);
+              row.set('STATUS', 'success');
+              row.set('FULLNAME', result.fullName);
+            } else {
+              console.log(`❌ [${user}] Thất bại: ${result.error}`);
+              row.set('STATUS', 'error');
+            }
+
+            await row.save();
+          }
         }
-        await new Promise(r => setTimeout(r, 5000));
+      } catch (err) {
+        console.error('Lỗi khi xử lý sheet:', err.message);
+      }
+
+      // Nghỉ 5 giây trước khi quét lại
+      await new Promise(r => setTimeout(r, 5000));
     }
+  } catch (err) {
+    console.error('Lỗi khởi tạo Google Sheet:', err.message);
+    process.exit(1);
+  }
 }
 
-async function performLoginAndGetName(user, pass) {
-    // TỰ ĐỘNG CẤU HÌNH TRÌNH DUYỆT THEO MÔI TRƯỜNG
-    const browser = await chromium.launch({ 
-        headless: !isDev, // Nếu là Dev thì hiện UI (headless = false), nếu không thì ẩn (headless = true)
-        slowMo: isDev ? 150 : 0 // Nếu Dev thì làm chậm lại để nhìn, nếu Prod thì chạy tốc độ tối đa
-    }); 
-    
-    const context = await browser.newContext();
+async function performLoginAndGetName(username, password) {
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: !IS_DEV,
+      slowMo: IS_DEV ? 150 : 0,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',              // hữu ích khi chạy headless
+        '--disable-extensions',
+        '--disable-infobars',
+      ],
+    });
+
+    const context = await browser.newContext({
+      viewport: { width: 1280, height: 800 },
+      userAgent:
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    });
+
     const page = await context.newPage();
 
-    try {
-        if (fs.existsSync(TIMEHOOKER_PATH)) {
-            const script = fs.readFileSync(TIMEHOOKER_PATH, 'utf8');
-            await page.addInitScript(script);
-        }
-
-        await page.goto('http://elearning.vina-link.com.vn/login/index.php', { waitUntil: 'networkidle' });
-        await page.fill('#username', user.toString());
-        await page.fill('#password', pass.toString());
-        await page.click('#loginbtn');
-
-        await page.waitForURL(url => !url.href.includes('login/index.php'), { timeout: 15000 });
-        
-        // Nếu là Prod thì đợi ít hơn để tiết kiệm tài nguyên
-        await page.waitForTimeout(isDev ? 2000 : 1000);
-
-        await page.waitForSelector('.username', { timeout: 8000 });
-        const fullName = await page.innerText('.username');
-        
-        return { success: true, url: page.url(), fullName: fullName.trim() };
-
-    } catch (err) {
-        return { success: false, error: err.message };
-    } finally {
-        await browser.close();
+    // Inject TimeHooker nếu có
+    if (fs.existsSync(TIMEHOOKER_PATH)) {
+      const script = fs.readFileSync(TIMEHOOKER_PATH, 'utf8');
+      await page.addInitScript(script);
     }
+
+    await page.goto('http://elearning.vina-link.com.vn/login/index.php', {
+      waitUntil: 'networkidle',
+      timeout: 30000,
+    });
+
+    await page.fill('#username', username);
+    await page.fill('#password', password);
+    await page.click('#loginbtn');
+
+    // Chờ chuyển hướng khỏi trang login
+    await page.waitForURL(url => !url.href.includes('login/index.php'), {
+      timeout: 20000,
+    });
+
+    // Đợi thêm một chút để trang load ổn định
+    await page.waitForTimeout(IS_DEV ? 2500 : 800);
+
+    await page.waitForSelector('.username', { timeout: 15000 });
+    const fullName = (await page.innerText('.username')).trim();
+
+    return { success: true, fullName };
+  } catch (err) {
+    return { success: false, error: err.message || 'Lỗi không xác định' };
+  } finally {
+    if (browser) {
+      // Ở production luôn close browser
+      // Ở dev có thể comment dòng này nếu muốn giữ browser để debug
+      await browser.close();
+    }
+  }
 }
 
-runBot();
+// Chạy bot
+runBot().catch(err => {
+  console.error('Bot bị lỗi nghiêm trọng:', err);
+  process.exit(1);
+});

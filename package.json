@@ -1,4 +1,13 @@
 {
+  "name": "vinalink-auto",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "NODE_ENV=development node index.js",
+    "prod": "NODE_ENV=production node index.js",
+    "postinstall": "playwright install --with-deps chromium"
+  },
   "dependencies": {
     "dotenv": "^16.4.5",
     "google-auth-library": "^9.0.0",
