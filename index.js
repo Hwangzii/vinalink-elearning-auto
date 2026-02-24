@@ -6,12 +6,12 @@ const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 
-// Xác định môi trường một cách rõ ràng
+// Xác định môi trường rõ ràng
 const NODE_ENV = (process.env.NODE_ENV || 'development').trim().toLowerCase();
 const IS_DEV = NODE_ENV === 'development';
 const IS_PROD = NODE_ENV === 'production' || NODE_ENV === 'prod';
 
-// Các đường dẫn
+// Các đường dẫn (chỉ dùng fallback cho local)
 const CREDENTIALS_PATH = path.join(__dirname, 'key', 'credentials.json');
 const TIMEHOOKER_PATH = path.join(__dirname, 'TimeHooker.txt');
 const SPREADSHEET_ID = '15o-NJOjYFxeuRPI6iqQcfQEJHIFAT-RfQyMezVoKIn4';
@@ -19,14 +19,28 @@ const SPREADSHEET_ID = '15o-NJOjYFxeuRPI6iqQcfQEJHIFAT-RfQyMezVoKIn4';
 // Khởi tạo Google Auth
 let auth;
 try {
-  const creds = require(CREDENTIALS_PATH);
+  let creds;
+
+  if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    // Trên Render: đọc từ env var (toàn bộ JSON string)
+    creds = JSON.parse(process.env.GOOGLE_SERVICE_ACCOUNT_JSON);
+    console.log('✅ Sử dụng GOOGLE_SERVICE_ACCOUNT_JSON từ biến môi trường (production/Render)');
+  } else {
+    // Fallback cho local dev: đọc từ file
+    creds = require(CREDENTIALS_PATH);
+    console.log('✅ Sử dụng file credentials.json local (development)');
+  }
+
   auth = new JWT({
     email: creds.client_email,
-    key: creds.private_key,
+    key: creds.private_key.replace(/\\n/g, '\n'), // Fix \n bị escape trong env var
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
 } catch (err) {
-  console.error('Không thể đọc file credentials.json:', err.message);
+  console.error('❌ Không thể khởi tạo credentials:', err.message);
+  console.error('Kiểm tra:');
+  console.error('- Trên Render: biến GOOGLE_SERVICE_ACCOUNT_JSON có đúng JSON không?');
+  console.error('- Trên local: thư mục key/credentials.json tồn tại chưa?');
   process.exit(1);
 }
 
@@ -100,7 +114,7 @@ async function performLoginAndGetName(username, password) {
         '--no-sandbox',
         '--disable-setuid-sandbox',
         '--disable-dev-shm-usage',
-        '--disable-gpu',              // hữu ích khi chạy headless
+        '--disable-gpu',
         '--disable-extensions',
         '--disable-infobars',
       ],
@@ -129,12 +143,10 @@ async function performLoginAndGetName(username, password) {
     await page.fill('#password', password);
     await page.click('#loginbtn');
 
-    // Chờ chuyển hướng khỏi trang login
     await page.waitForURL(url => !url.href.includes('login/index.php'), {
       timeout: 20000,
     });
 
-    // Đợi thêm một chút để trang load ổn định
     await page.waitForTimeout(IS_DEV ? 2500 : 800);
 
     await page.waitForSelector('.username', { timeout: 15000 });
@@ -145,8 +157,6 @@ async function performLoginAndGetName(username, password) {
     return { success: false, error: err.message || 'Lỗi không xác định' };
   } finally {
     if (browser) {
-      // Ở production luôn close browser
-      // Ở dev có thể comment dòng này nếu muốn giữ browser để debug
       await browser.close();
     }
   }
