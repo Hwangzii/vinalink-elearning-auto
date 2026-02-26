@@ -1,8 +1,0 @@
-{
-  "dependencies": {
-    "dotenv": "^17.2.4",
-    "google-auth-library": "^10.5.0",
-    "google-spreadsheet": "^5.0.2",
-    "playwright": "^1.58.1"
-  }
-}
