@@ -31,15 +31,20 @@ async function performLogin(username, password) {
 
     await page.goto('http://elearning.vina-link.com.vn/login/index.php', {
       waitUntil: 'networkidle',
-      timeout: 30000,
+      timeout: 20000,          // giảm từ 30000 xuống 20000
     });
 
     await page.fill('#username', username);
     await page.fill('#password', password);
     await page.click('#loginbtn');
 
-    await page.waitForURL(url => !url.href.includes('login/index.php'), { timeout: 20000 });
-    await page.waitForSelector('.username', { timeout: 15000 });
+    await page.waitForURL(url => !url.href.includes('login/index.php'), { 
+      timeout: 15000           // giảm từ 20000 xuống 15000
+    });
+
+    await page.waitForSelector('.username', { 
+      timeout: 10000           // giảm từ 15000 xuống 10000
+    });
 
     const fullName = (await page.innerText('.username')).trim();
     return { success: true, fullName };

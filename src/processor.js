@@ -9,28 +9,19 @@ async function processRow(row, { performLogin }) {
     return;
   }
 
-  for (let attempt = 1; attempt <= config.MAX_ATTEMPTS; attempt++) {
-    row.set('STATUS', `processing... (thử ${attempt})`);
+  // Không cần set processing nữa để tránh ghi đè Sheet liên tục
+  const result = await performLogin(user, pass);
+
+  if (result.success) {
+    row.set('STATUS', 'success');
+    row.set('FULLNAME', result.fullName);
     await row.save();
-
-    const result = await performLogin(user, pass);
-
-    if (result.success) {
-      row.set('STATUS', 'success');
-      row.set('FULLNAME', result.fullName);
-      await row.save();
-      console.log(`[${user}] Thành công → ${result.fullName}`);
-      return;
-    }
-
-    console.log(`[${user}] Thất bại (thử ${attempt}): ${result.error}`);
-
-    if (attempt < config.MAX_ATTEMPTS) {
-      await new Promise(r => setTimeout(r, config.RETRY_DELAY_MS));
-    } else {
-      row.set('STATUS', 'error');
-      await row.save();
-    }
+    console.log(`[${user}] Thành công → ${result.fullName}`);
+  } else {
+    // Tất cả lỗi (timeout, sai pass, mạng, captcha, v.v.) đều coi là sai thông tin
+    row.set('STATUS', 'Sai ID/Mật khẩu');
+    await row.save();
+    console.log(`[${user}] Thất bại → ${result.error}`);
   }
 }
 
