@@ -64,10 +64,18 @@ async function run() {
   while (true) {
     try {
       const rows = await sheet.getRows();
-      const needLogin = rows.filter(r => r.get('STATUS')?.trim() === 'login');
 
-      if (needLogin.length > 0) {
-        console.log(`Tìm thấy ${needLogin.length} tài khoản cần xử lý`);
+      // Chỉ lấy những hàng cần xử lý: STATUS === 'login' (bỏ qua 'success', 'Sai ID/Mật khẩu', 'error', v.v.)
+      const needLogin = rows.filter(r => {
+        const status = (r.get('STATUS') || '').toString().trim().toLowerCase();
+        return status === 'login';
+      });
+
+      if (needLogin.length === 0) {
+        // console.log(`[${new Date().toLocaleTimeString()}] Không có hàng 'login' → chờ ${config.POLL_INTERVAL_MS / 1000}s`);
+        // (bỏ log này nếu thấy spam, chỉ giữ khi debug)
+      } else {
+        console.log(`Tìm thấy ${needLogin.length} hàng cần xử lý (chỉ 'login')`);
         await Promise.all(
           needLogin.map(row => limit(() => processRow(row, { performLogin })))
         );
