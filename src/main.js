@@ -1,7 +1,8 @@
+// file: src/main.js
 const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const config = require('./config');
-const { performLogin } = require('./browser');
+const { performLoginAndGetProgress } = require('./browser');
 const { processRow } = require('./processor');
 
 // Google Auth
@@ -77,7 +78,7 @@ async function run() {
       } else {
         console.log(`Tìm thấy ${needLogin.length} hàng cần xử lý (chỉ 'login')`);
         await Promise.all(
-          needLogin.map(row => limit(() => processRow(row, { performLogin })))
+          needLogin.map(row => limit(() => processRow(row, { performLoginAndGetProgress })))
         );
         console.log(`Xong đợt này`);
       }

@@ -2,6 +2,7 @@ Vinalink Auto Project Structure
 .
 ├── Dockerfile
 ├── hazii_note
+│   ├── Docker-note.txt
 │   ├── note.txt
 │   └── vinalink-auto-structure.txt
 ├── index.js
@@ -10,6 +11,11 @@ Vinalink Auto Project Structure
 │   ├── TimeHooker.txt
 │   └── vinalink-auto-92e59245307e.json
 ├── package.json
-└── package-lock.json
+├── package-lock.json
+└── src
+    ├── browser.js
+    ├── config.js
+    ├── main.js
+    └── processor.js
 
-3 directories, 9 files
+4 directories, 14 files

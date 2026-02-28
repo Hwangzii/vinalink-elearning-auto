@@ -1,1 +1,2 @@
 mkdir -p hazii_note && echo "Vinalink Auto Project Structure" > hazii_note/vinalink-auto-structure.txt && tree -I "node_modules|.git|.cache" >> hazii_note/vinalink-auto-structure.txt
+node index.js
