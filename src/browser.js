@@ -5,8 +5,8 @@ const config = require('./config');
 
 const IS_DEV = process.env.NODE_ENV === 'development';
 
-// ─── Inject speed chỉ khi đúng URL player ────────────────────────────────────
-async function setSpeedIfOnPlayer(page) {
+// ─── Set speed chỉ khi đang ở player URL ─────────────────────────────────────
+async function setSpeedIfOnPlayer(page, username) {
   if (!page.url().includes('player.php')) return;
   try {
     await page.evaluate((rate) => {
@@ -18,6 +18,7 @@ async function setSpeedIfOnPlayer(page) {
         iframe.contentWindow.$hookTimer.setSpeed(rate);
       }
     }, config.SPEED_RATE);
+    console.log(`[${username}] ⚡ Speed set: ${config.SPEED_RATE}×`);
   } catch (_) {}
 }
 
@@ -121,9 +122,7 @@ async function performLoginAndGetProgress(username, password) {
       ],
     });
 
-    if (IS_DEV) {
-      console.log(`[DEV] headless=false | slowMo=${config.DEV_SLOW_MO}ms`);
-    }
+    if (IS_DEV) console.log(`[DEV] headless=false | slowMo=${config.DEV_SLOW_MO}ms`);
 
     const context = await browser.newContext({
       viewport: { width: 1280, height: 800 },
@@ -133,31 +132,18 @@ async function performLoginAndGetProgress(username, password) {
     });
 
     // Inject TimerHooker vào MỌI frame (context-level → cả iframe scorm)
+    // KHÔNG tự set speed ở đây — chỉ set sau khi đã vào đúng player URL
     if (fs.existsSync(config.TIMEHOOKER_PATH)) {
       const script = fs.readFileSync(config.TIMEHOOKER_PATH, 'utf8');
-      const autoSpeed = `
-${script}
-(function(){
-  var _t = 0;
-  var _iv = setInterval(function() {
-    if (typeof $hookTimer !== 'undefined' && $hookTimer && $hookTimer.setSpeed) {
-      $hookTimer.setSpeed(${config.SPEED_RATE});
-      clearInterval(_iv);
-    } else if (++_t > 60) {
-      clearInterval(_iv);
-    }
-  }, 100);
-})();
-`;
-      await context.addInitScript(autoSpeed);
-      console.log(`[${username}] TimerHooker injected | SPEED_RATE=${config.SPEED_RATE}×`);
+      await context.addInitScript(script);
+      console.log(`[${username}] TimerHooker injected (chưa set speed, chờ vào player).`);
     }
 
     const page = await context.newPage();
     page.on('dialog', async d => { try { await d.dismiss(); } catch (_) {} });
 
-    // ── 1. Đăng nhập ─────────────────────────────────────────────────────────
-    console.log(`[${username}] Đăng nhập...`);
+    // ── (1) Đăng nhập ─────────────────────────────────────────────────────────
+    console.log(`[${username}] (1) Đăng nhập...`);
     await page.goto('http://elearning.vina-link.com.vn/login/index.php', {
       waitUntil: 'networkidle', timeout: 20000,
     });
@@ -168,41 +154,54 @@ ${script}
     await page.waitForSelector('.username', { timeout: 10000 });
 
     const fullName = (await page.innerText('.username')).trim();
-    console.log(`[${username}] ✓ Đăng nhập thành công → ${fullName}`);
+    console.log(`[${username}] (1) ✓ Đăng nhập thành công → ${fullName}`);
 
-    // ── 2. Vào khóa học ───────────────────────────────────────────────────────
-    await page.goto('http://elearning.vina-link.com.vn/', {
-      waitUntil: 'networkidle', timeout: 15000,
-    });
-    await page.getByRole('link', { name: 'Đào tạo cơ bản' }).first()
-      .waitFor({ state: 'visible', timeout: 10000 });
-    await page.getByRole('link', { name: 'Đào tạo cơ bản' }).first().click();
+    // ── (2) Click link "Đào tạo cơ bản" ──────────────────────────────────────
+    // Dùng class đặc trưng "font-weight-400 blue-grey-600 font-size-18" từ main content
+    // tránh nhầm với link sidebar navigation cùng href
+    console.log(`[${username}] (2) Click "Đào tạo cơ bản"...`);
+    const courseLink = page.locator(
+      'a.font-weight-400.blue-grey-600.font-size-18[href="http://elearning.vina-link.com.vn/course/view.php?id=10"]'
+    ).first();
+    await courseLink.waitFor({ state: 'visible', timeout: 10000 });
+    await courseLink.click();
     await page.waitForURL('**/course/view.php?id=10**', { timeout: 15000 });
+    console.log(`[${username}] (2) ✓ Đã vào trang khóa học → ${page.url()}`);
 
-    // ── 3. Click SCORM ────────────────────────────────────────────────────────
-    await page.getByRole('link', { name: '1. Pháp luật về bán hàng đa cấp' }).first()
-      .waitFor({ state: 'visible', timeout: 10000 });
-    await page.getByRole('link', { name: '1. Pháp luật về bán hàng đa cấp' }).first().click();
-    await page.waitForURL(url => url.href.includes('/mod/scorm/'), { timeout: 20000 });
+    // ── (3) Click link SCORM "1. Pháp luật về bán hàng đa cấp" ───────────────
+    // Có 2 thẻ <a> cùng href → lọc cái nằm trong #module-69 (activity list) để chắc chắn
+    console.log(`[${username}] (3) Click SCORM "1. Pháp luật về bán hàng đa cấp"...`);
+    const scormLink = page.locator(
+      '#module-69 a[href="http://elearning.vina-link.com.vn/mod/scorm/view.php?id=69"]'
+    ).first();
+    await scormLink.waitFor({ state: 'visible', timeout: 10000 });
+    await scormLink.click();
+    await page.waitForURL('**/mod/scorm/view.php?id=69**', { timeout: 20000 });
+    console.log(`[${username}] (3) ✓ Đã vào trang SCORM view → ${page.url()}`);
 
-    // ── 4. Nút launch (nếu có) ────────────────────────────────────────────────
+    // ── (4) Vào trang player (có thể có nút launch hoặc tự redirect) ──────────
+    console.log(`[${username}] (4) Chờ vào player...`);
+
+    // Thử click nút Enter/Bắt đầu nếu có
     const launchBtn = page.getByRole('button', { name: /Enter|Bắt đầu|Xem|Launch/i }).first();
     if (await launchBtn.isVisible({ timeout: 8000 }).catch(() => false)) {
       await launchBtn.click();
+      console.log(`[${username}] (4) Đã click nút launch.`);
     }
+
     await page.waitForURL('**/player.php**', { timeout: 30000 });
-    console.log(`[${username}] ✓ Vào player → ${page.url()}`);
+    console.log(`[${username}] (4) ✓ Đã vào player → ${page.url()}`);
 
-    // ── 5. Chờ iframe render + set speed ──────────────────────────────────────
+    // ── Set speed SAU KHI đã vào đúng player URL ──────────────────────────────
     await page.waitForTimeout(config.PLAYER_READY_MS);
-    await setSpeedIfOnPlayer(page);
-    console.log(`[${username}] ⚡ SPEED_RATE=${config.SPEED_RATE}× | LOOP=${config.LOOP_INTERVAL}ms | MAX_STUCK=${config.MAX_STUCK}`);
+    await setSpeedIfOnPlayer(page, username);
+    console.log(`[${username}] ⚡ SPEED=${config.SPEED_RATE}× | LOOP=${config.LOOP_INTERVAL}ms`);
 
-    // ── 6. Vòng lặp học liên tục ──────────────────────────────────────────────
+    // ── Vòng lặp học liên tục ─────────────────────────────────────────────────
     let lastSlide  = 0;
     let stuckCount = 0;
     let loopCount  = 0;
-    console.log(`[${username}] 🚀 Bắt đầu vòng lặp (${config.TOTAL_SLIDES} slides)...`);
+    console.log(`[${username}] 🚀 Bắt đầu học tự động (${config.TOTAL_SLIDES} slides)...`);
 
     while (true) {
       if (!page.url().includes('player.php')) {
@@ -212,15 +211,13 @@ ${script}
       }
 
       const result = await forcePlayAndNext(page);
-
       loopCount++;
 
-      // Log action khi dev hoặc khi có sự kiện quan trọng
       if (IS_DEV && result.action !== 'none' && result.action !== 'error') {
         console.log(`[${username}] [DEV] action=${result.action} | loop=${loopCount}`);
       }
 
-      // Đọc tiến độ mỗi 10 vòng hoặc khi next_slide / dismiss
+      // Đọc tiến độ mỗi 10 vòng hoặc khi có sự kiện quan trọng
       if (loopCount % 10 === 0 || result.action === 'next_slide' || result.action === 'dismiss_popup') {
         const prog = await getSlideProgress(page);
         if (prog) {
