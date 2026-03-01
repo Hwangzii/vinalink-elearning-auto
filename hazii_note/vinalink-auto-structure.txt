@@ -16,7 +16,10 @@ Vinalink Auto Project Structure
     ├── browser.js
     ├── columns.js
     ├── config.js
+    ├── learner.js
     ├── main.js
+    ├── messenger.js
+    ├── navigator.js
     └── processor.js
 
-4 directories, 15 files
+4 directories, 18 files

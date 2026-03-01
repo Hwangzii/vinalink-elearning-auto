@@ -9,7 +9,7 @@ const { navigate } = require('./navigator');
 
 const IS_DEV = process.env.NODE_ENV === 'development';
 
-async function performLoginAndGetProgress(username, password) {
+async function performLoginAndGetProgress(username, password, row) {
   let browser;
   try {
     browser = await chromium.launch({
@@ -55,7 +55,7 @@ async function performLoginAndGetProgress(username, password) {
     page.on('dialog', async d => { await d.dismiss().catch(() => {}); });
 
     // Uỷ quyền toàn bộ điều hướng + học cho navigator
-    return await navigate(page, username, password);
+    return await navigate(page, username, password, row);
 
   } catch (err) {
     console.error(`[${username}] Lỗi: ${err.message}`);

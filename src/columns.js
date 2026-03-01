@@ -15,11 +15,19 @@ const COL = {
 };
 
 // Giá trị STATUS dùng trong sheet
+// ── Người dùng set ──────────────────────────────────────────────────────────
+//   'đăng nhập'  → bot phát hiện và bắt đầu xử lý tài khoản đó
+// ── Bot tự set ──────────────────────────────────────────────────────────────
+//   'studying'   → đăng nhập thành công, đang học (hiển thị 'đang học...')
+//   'Chưa thi'   → học xong + gửi tin nhắn xong, chờ thi
+//   'Sai ID/Mật khẩu' → đăng nhập thất bại
+//   'Lỗi'        → lỗi không xác định
 const STATUS = {
-  pending:  'login',            // hàng cần xử lý (người dùng đặt)
-  success:  'Hoàn thành',       // ✅ học xong
-  failed:   'Sai ID/Mật khẩu', // ❌ đăng nhập thất bại
-  error:    'Lỗi',              // ❌ lỗi khác
+  pending:   'Đăng nhập',       // 🔵 người dùng set → bot sẽ xử lý
+  studying:  'Đang học...',        // 🟡 đang học (bot set ngay sau đăng nhập)
+  done:      'Chưa thi',        // ✅ học xong + đã nhắn tin → chờ thi
+  failed:    'Sai ID/Mật khẩu',// ❌ sai tài khoản
+  error:     'Lỗi',             // ❌ lỗi khác
 };
 
 // ─── Helper: đọc giá trị từ row theo danh sách tên cột ──────────────────────

@@ -6,18 +6,18 @@
 // Không chứa logic học — uỷ quyền cho learner.js
 const { learnAllLessons } = require('./learner');
 
-async function navigate(page, username, password) {
+async function navigate(page, username, password, row) {
 
   // ── (1) Đăng nhập ──────────────────────────────────────────────────────────
   console.log(`[${username}] Đăng nhập...`);
   await page.goto('http://elearning.vina-link.com.vn/login/index.php', {
-    waitUntil: 'networkidle', timeout: 20000,
+    waitUntil: 'domcontentloaded', timeout: 40000,
   });
   await page.fill('#username', username);
   await page.fill('#password', password);
   await page.click('#loginbtn');
-  await page.waitForURL(url => !url.href.includes('/login/'), { timeout: 15000 });
-  await page.waitForSelector('.username', { timeout: 10000 });
+  await page.waitForURL(url => !url.href.includes('/login/'), { timeout: 40000 });
+  await page.waitForSelector('.username', { timeout: 20000 });
 
   const fullName = (await page.innerText('.username')).trim();
   console.log(`[${username}] ✓ Đăng nhập → ${fullName}`);
@@ -28,9 +28,9 @@ async function navigate(page, username, password) {
   const courseLink = page.locator(
     'a.font-weight-400.blue-grey-600.font-size-18[href*="course/view.php?id=10"]'
   ).first();
-  await courseLink.waitFor({ state: 'visible', timeout: 10000 });
+  await courseLink.waitFor({ state: 'visible', timeout: 20000 });
   await courseLink.click();
-  await page.waitForURL('**/course/view.php?id=10**', { timeout: 15000 });
+  await page.waitForURL('**/course/view.php?id=10**', { timeout: 40000 });
   console.log(`[${username}] ✓ Vào khóa học`);
 
   // ── (3) Click bài 1 SCORM ──────────────────────────────────────────────────
@@ -39,7 +39,7 @@ async function navigate(page, username, password) {
   const scormLink = page.locator(
     '#module-69 a[href*="mod/scorm/view.php?id=69"]'
   ).first();
-  await scormLink.waitFor({ state: 'visible', timeout: 10000 });
+  await scormLink.waitFor({ state: 'visible', timeout: 20000 });
   await scormLink.click();
 
   // Xử lý popup gián đoạn nếu xuất hiện trước khi vào player
@@ -47,7 +47,7 @@ async function navigate(page, username, password) {
 
   // ── (4) Chờ vào player.php ─────────────────────────────────────────────────
   try {
-    await page.waitForURL('**/player.php**', { timeout: 45000 });
+    await page.waitForURL('**/player.php**', { timeout: 60000 });
     console.log(`[${username}] ✓ Vào player → ${page.url()}`);
   } catch (_) {
     if (!page.url().includes('player.php')) {
@@ -56,7 +56,7 @@ async function navigate(page, username, password) {
   }
 
   // ── Uỷ quyền vòng lặp học cho learner ─────────────────────────────────────
-  const progress = await learnAllLessons(page, username);
+  const progress = await learnAllLessons(page, username, row);
   return { success: true, fullName, progress };
 }
 

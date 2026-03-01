@@ -6,6 +6,10 @@
 //   - Đọc tiến độ, phát hiện hoàn thành / kẹt
 //   - Click "Phần tiếp theo" để chuyển bài
 const config = require('./config');
+const { sendCompletionMessage } = require('./messenger');
+
+// Bài cuối cùng cần nhắn tin sau khi hoàn thành
+const LESSON_SEND_MSG = 3;
 
 const IS_DEV = process.env.NODE_ENV === 'development';
 const DEFAULT_TOTAL_SLIDES = 220;
@@ -173,7 +177,7 @@ async function learnOneLesson(page, username, lessonNo) {
 }
 
 // ─── Học toàn bộ bài trong khóa ──────────────────────────────────────────────
-async function learnAllLessons(page, username) {
+async function learnAllLessons(page, username, row) {
   let lesson   = 1;
   let summary  = '';
 
@@ -198,6 +202,11 @@ async function learnAllLessons(page, username) {
     const result = await learnOneLesson(page, username, lesson);
     if (typeof result === 'string' && result !== 'left') {
       summary += `Bài ${lesson}: ${result} | `;
+    }
+
+    // Sau khi hoàn thành bài LESSON_SEND_MSG → gửi tin nhắn đào tạo viên
+    if (lesson === LESSON_SEND_MSG && typeof result === 'string' && result !== 'left') {
+      await sendCompletionMessage(page, username, row);
     }
 
     // Chuyển bài tiếp theo

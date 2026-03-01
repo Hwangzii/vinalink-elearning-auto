@@ -59,11 +59,16 @@ async function run() {
   }
 
   const sheet = doc.sheetsByIndex[0];
-  const limit = createLimiter(config.CONCURRENT_LIMIT);
 
-  console.log(`🤖 Bot khởi động | Xử lý song song: ${config.CONCURRENT_LIMIT} tài khoản`);
+  // dev → luôn 1 tài khoản để quan sát UI; start/prod → theo config
+  const IS_DEV     = process.env.NODE_ENV === 'development';
+  const concurrent = IS_DEV ? config.CONCURRENT_DEV : config.CONCURRENT_LIMIT;
+  const limit      = createLimiter(concurrent);
+
+  console.log(`🤖 Bot khởi động | Chế độ: ${IS_DEV ? 'DEV (1 tài khoản)' : `PROD (${concurrent} tài khoản song song)`}`);
   console.log(`⏳ Kiểm tra sheet mỗi ${config.POLL_INTERVAL_MS / 1000}s`);
-  console.log(`🔍 Tìm các hàng có STATUS = "${STATUS.pending}"\n`);
+  console.log(`🔍 Tìm các hàng có STATUS = "${STATUS.pending}"
+`);
 
   while (true) {
     try {

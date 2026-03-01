@@ -9,7 +9,8 @@ module.exports = {
   SPREADSHEET_ID:   '15o-NJOjYFxeuRPI6iqQcfQEJHIFAT-RfQyMezVoKIn4',
 
   // ── Bot ────────────────────────────────────────────────────────────────────
-  CONCURRENT_LIMIT: 1,
+  CONCURRENT_LIMIT: 5,     // số tài khoản xử lý song song (npm run start)
+  CONCURRENT_DEV:   1,     // luôn 1 khi dev để dễ quan sát UI browser
   POLL_INTERVAL_MS: 5000,
   RETRY_DELAY_MS:   3000,
   MAX_ATTEMPTS:     2,
