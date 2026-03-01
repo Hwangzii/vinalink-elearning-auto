@@ -14,8 +14,9 @@ Vinalink Auto Project Structure
 ├── package-lock.json
 └── src
     ├── browser.js
+    ├── columns.js
     ├── config.js
     ├── main.js
     └── processor.js
 
-4 directories, 14 files
+4 directories, 15 files

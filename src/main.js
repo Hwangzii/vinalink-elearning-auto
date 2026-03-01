@@ -4,8 +4,9 @@ const { JWT } = require('google-auth-library');
 const config = require('./config');
 const { performLoginAndGetProgress } = require('./browser');
 const { processRow } = require('./processor');
+const { COL, STATUS, getCol } = require('./columns');
 
-// Google Auth
+// ── Google Auth ──────────────────────────────────────────────────────────────
 function initAuth() {
   let creds;
   try {
@@ -15,10 +16,9 @@ function initAuth() {
       creds = require(config.CREDENTIALS_PATH);
     }
   } catch (err) {
-    console.error('Không thể đọc credentials:', err.message);
+    console.error('❌ Không thể đọc credentials:', err.message);
     process.exit(1);
   }
-
   return new JWT({
     email: creds.client_email,
     key: creds.private_key.replace(/\\n/g, '\n'),
@@ -26,7 +26,7 @@ function initAuth() {
   });
 }
 
-// Native limiter
+// ── Giới hạn concurrent ──────────────────────────────────────────────────────
 function createLimiter(concurrency) {
   let active = 0;
   const queue = [];
@@ -45,45 +45,47 @@ function createLimiter(concurrency) {
   });
 }
 
-// Main loop
+// ── Vòng lặp chính ──────────────────────────────────────────────────────────
 async function run() {
   const auth = initAuth();
-  const doc = new GoogleSpreadsheet(config.SPREADSHEET_ID, auth);
+  const doc  = new GoogleSpreadsheet(config.SPREADSHEET_ID, auth);
 
   try {
     await doc.loadInfo();
+    console.log(`✅ Kết nối Google Sheet thành công: "${doc.title}"`);
   } catch (err) {
-    console.error('Không thể kết nối Sheet:', err.message);
+    console.error('❌ Không thể kết nối Google Sheet:', err.message);
     process.exit(1);
   }
 
   const sheet = doc.sheetsByIndex[0];
   const limit = createLimiter(config.CONCURRENT_LIMIT);
 
-  console.log(`Bot khởi động - concurrent: ${config.CONCURRENT_LIMIT}`);
+  console.log(`🤖 Bot khởi động | Xử lý song song: ${config.CONCURRENT_LIMIT} tài khoản`);
+  console.log(`⏳ Kiểm tra sheet mỗi ${config.POLL_INTERVAL_MS / 1000}s`);
+  console.log(`🔍 Tìm các hàng có STATUS = "${STATUS.pending}"\n`);
 
   while (true) {
     try {
       const rows = await sheet.getRows();
 
-      // Chỉ lấy những hàng cần xử lý: STATUS === 'login' (bỏ qua 'success', 'Sai ID/Mật khẩu', 'error', v.v.)
-      const needLogin = rows.filter(r => {
-        const status = (r.get('STATUS') || '').toString().trim().toLowerCase();
-        return status === 'login';
+      // Lọc hàng cần xử lý: STATUS === 'login' (giá trị từ columns.js)
+      const hangCanXuLy = rows.filter(r => {
+        const status = getCol(r, COL.status).toLowerCase();
+        return status === STATUS.pending.toLowerCase();
       });
 
-      if (needLogin.length === 0) {
-        // console.log(`[${new Date().toLocaleTimeString()}] Không có hàng 'login' → chờ ${config.POLL_INTERVAL_MS / 1000}s`);
-        // (bỏ log này nếu thấy spam, chỉ giữ khi debug)
+      if (hangCanXuLy.length === 0) {
+        // Không log khi rảnh để tránh spam
       } else {
-        console.log(`Tìm thấy ${needLogin.length} hàng cần xử lý (chỉ 'login')`);
+        console.log(`📋 Tìm thấy ${hangCanXuLy.length} hàng cần xử lý...`);
         await Promise.all(
-          needLogin.map(row => limit(() => processRow(row, { performLoginAndGetProgress })))
+          hangCanXuLy.map(row => limit(() => processRow(row, { performLoginAndGetProgress })))
         );
-        console.log(`Xong đợt này`);
+        console.log(`✅ Xong đợt này\n`);
       }
     } catch (err) {
-      console.error('Lỗi vòng lặp:', err.message);
+      console.error('❌ Lỗi vòng lặp:', err.message);
     }
 
     await new Promise(r => setTimeout(r, config.POLL_INTERVAL_MS));
@@ -91,6 +93,6 @@ async function run() {
 }
 
 run().catch(err => {
-  console.error('Bot crash:', err);
+  console.error('💥 Bot crash:', err);
   process.exit(1);
 });
