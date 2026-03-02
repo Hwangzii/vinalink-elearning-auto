@@ -21,6 +21,8 @@ Vinalink Auto Project Structure
     ├── main.js
     ├── messenger.js
     ├── navigator.js
-    └── processor.js
+    ├── processor.js
+    ├── quiz-data.js
+    └── quizzer.js
 
-4 directories, 19 files
+4 directories, 21 files
