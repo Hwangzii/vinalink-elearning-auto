@@ -76,4 +76,17 @@ async function dismissPopupIfAny(page, username) {
   }
 }
 
-module.exports = { navigate };
+// ─── Chỉ đăng nhập, trả về fullName (dùng cho quizzer) ──────────────────────
+async function loginOnly(page, username, password) {
+  await page.goto('http://elearning.vina-link.com.vn/login/index.php', {
+    waitUntil: 'domcontentloaded', timeout: 40000,
+  });
+  await page.fill('#username', username);
+  await page.fill('#password', password);
+  await page.click('#loginbtn');
+  await page.waitForURL(url => !url.href.includes('/login/'), { timeout: 40000 });
+  await page.waitForSelector('.username', { timeout: 20000 });
+  return (await page.innerText('.username')).trim();
+}
+
+module.exports = { navigate, loginOnly };

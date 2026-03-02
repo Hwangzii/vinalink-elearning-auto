@@ -4,6 +4,7 @@ const { JWT } = require('google-auth-library');
 const config = require('./config');
 const { performLoginAndGetProgress } = require('./browser');
 const { processRow } = require('./processor');
+const { processQuizRow } = require('./processor');
 const { COL, STATUS, getCol } = require('./columns');
 
 // ── Google Auth ──────────────────────────────────────────────────────────────
@@ -74,19 +75,33 @@ async function run() {
     try {
       const rows = await sheet.getRows();
 
-      // Lọc hàng cần xử lý: STATUS === 'login' (giá trị từ columns.js)
-      const hangCanXuLy = rows.filter(r => {
+      // Lọc hàng cần học: STATUS === 'đăng nhập'
+      const hangCanHoc = rows.filter(r => {
         const status = getCol(r, COL.status).toLowerCase();
         return status === STATUS.pending.toLowerCase();
       });
 
-      if (hangCanXuLy.length === 0) {
+      // Lọc hàng cần thi: STATUS === 'Bắt đầu thi'
+      const hangCanThi = rows.filter(r => {
+        const status = getCol(r, COL.status).toLowerCase();
+        return status === STATUS.exam_pending.toLowerCase();
+      });
+
+      if (hangCanHoc.length === 0 && hangCanThi.length === 0) {
         // Không log khi rảnh để tránh spam
       } else {
-        console.log(`📋 Tìm thấy ${hangCanXuLy.length} hàng cần xử lý...`);
-        await Promise.all(
-          hangCanXuLy.map(row => limit(() => processRow(row, { performLoginAndGetProgress })))
-        );
+        if (hangCanHoc.length > 0) {
+          console.log(`📋 Tìm thấy ${hangCanHoc.length} hàng cần HỌC...`);
+          await Promise.all(
+            hangCanHoc.map(row => limit(() => processRow(row, { performLoginAndGetProgress })))
+          );
+        }
+        if (hangCanThi.length > 0) {
+          console.log(`🎯 Tìm thấy ${hangCanThi.length} hàng cần THI...`);
+          await Promise.all(
+            hangCanThi.map(row => limit(() => processQuizRow(row, { performLoginAndGetProgress })))
+          );
+        }
         console.log(`✅ Xong đợt này\n`);
       }
     } catch (err) {

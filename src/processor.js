@@ -78,3 +78,56 @@ async function processRow(row, { performLoginAndGetProgress }) {
 }
 
 module.exports = { processRow };
+
+// ─── Xử lý hàng thi (STATUS = 'Bắt đầu thi') ────────────────────────────────
+const { runQuiz } = require('./quizzer');
+const { loginOnly } = require('./navigator');
+const { chromium } = require('playwright');
+const config_mod = require('./config');
+
+async function processQuizRow(row, _deps) {
+  const user = getCol(row, COL.username);
+  const pass = getCol(row, COL.password);
+
+  if (!user || !pass) {
+    console.warn(`⚠ Dòng thiếu tài khoản hoặc mật khẩu → bỏ qua`);
+    return;
+  }
+
+  console.log(`[${user}] 🎯 Bắt đầu quy trình thi...`);
+  setCol(row, COL.status, STATUS.taking_exam);
+  await row.save();
+
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: process.env.NODE_ENV !== 'development',
+      slowMo:   process.env.NODE_ENV === 'development' ? config_mod.DEV_SLOW_MO : 0,
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'],
+    });
+    const context = await browser.newContext({
+      viewport:  { width: 1280, height: 800 },
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+    });
+    const page = await context.newPage();
+    page.on('dialog', async d => { await d.dismiss().catch(() => {}); });
+
+    const fullName = await loginOnly(page, user, pass);
+    console.log(`[${user}] ✓ Đăng nhập → ${fullName}`);
+
+    const result = await runQuiz(page, user, row);
+
+    setCol(row, COL.fullname, fullName || '');
+    await row.save();
+    console.log(`[${user}] ✅ Thi xong | Điểm: ${result.score || 'N/A'}`);
+
+  } catch (err) {
+    console.error(`[${user}] ❌ Lỗi thi: ${err.message}`);
+    setCol(row, COL.status, STATUS.error);
+    await row.save();
+  } finally {
+    if (browser) await browser.close().catch(() => {});
+  }
+}
+
+module.exports = { processRow, processQuizRow };

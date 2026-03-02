@@ -23,11 +23,17 @@ const COL = {
 //   'Sai ID/Mật khẩu' → đăng nhập thất bại
 //   'Lỗi'        → lỗi không xác định
 const STATUS = {
-  pending:   'Đăng nhập',       // 🔵 người dùng set → bot sẽ xử lý
-  studying:  'Đang học...',        // 🟡 đang học (bot set ngay sau đăng nhập)
-  done:      'Chưa thi',        // ✅ học xong + đã nhắn tin → chờ thi
-  failed:    'Sai ID/Mật khẩu',// ❌ sai tài khoản
-  error:     'Lỗi',             // ❌ lỗi khác
+  // ── Người dùng set ────────────────────────────────────────────────────────
+  pending:      'Đăng nhập',    // 🔵 → bot học tự động
+  exam_pending: 'Bắt đầu thi', // 🔵 → bot thi tự động
+
+  // ── Bot tự set ────────────────────────────────────────────────────────────
+  studying:     'Đang học...',     // 🟡 đang học
+  taking_exam:  'Đang thi...',  // 🟡 đang làm bài thi
+  done:         'Chưa thi',     // ✅ học xong + nhắn tin → chờ thi
+  exam_done:    'Đã thi xong',  // ✅ thi xong + bản cam kết
+  failed:       'Sai ID/Mật khẩu', // ❌ sai tài khoản
+  error:        'Lỗi',          // ❌ lỗi khác
 };
 
 // ─── Helper: đọc giá trị từ row theo danh sách tên cột ──────────────────────
