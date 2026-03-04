@@ -4,8 +4,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "dev": "NODE_ENV=development node index.js",
-    "prod": "NODE_ENV=production node index.js",
+    "dev": "node index.js",
+    "prod": "node index.js",
     "postinstall": "playwright install --with-deps chromium"
   },
   "dependencies": {

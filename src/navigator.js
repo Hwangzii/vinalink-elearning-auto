@@ -5,6 +5,7 @@
 //   (3) Click bài SCORM → chờ player.php
 // Không chứa logic học — uỷ quyền cho learner.js
 const { learnAllLessons } = require('./learner');
+const { COL, STATUS, setCol } = require('./columns');
 
 async function navigate(page, username, password, row) {
 
@@ -16,11 +17,29 @@ async function navigate(page, username, password, row) {
   await page.fill('#username', username);
   await page.fill('#password', password);
   await page.click('#loginbtn');
-  await page.waitForURL(url => !url.href.includes('/login/'), { timeout: 40000 });
+
+  // Chờ redirect ra khỏi /login/ — nếu sai mật khẩu trang sẽ ở lại /login/
+  try {
+    await page.waitForURL(url => !url.href.includes('/login/'), { timeout: 15000 });
+  } catch (_) {
+    // Vẫn đang ở trang login → kiểm tra có thông báo lỗi không
+    const stillOnLogin = page.url().includes('/login/');
+    if (stillOnLogin) {
+      return { success: false, error: 'invalid password' };
+    }
+  }
+
   await page.waitForSelector('.username', { timeout: 20000 });
 
   const fullName = (await page.innerText('.username')).trim();
   console.log(`[${username}] ✓ Đăng nhập → ${fullName}`);
+
+  // ── Ghi tên + chuyển trạng thái 'Đang học...' ngay sau khi đăng nhập ──────
+  if (row) {
+    setCol(row, COL.fullname, fullName);
+    setCol(row, COL.status, STATUS.studying);
+    await row.save();
+  }
 
   // ── (2) Vào khóa học ───────────────────────────────────────────────────────
   // Dùng class đặc trưng để tránh nhầm với link sidebar cùng href

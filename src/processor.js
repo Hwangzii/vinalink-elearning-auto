@@ -29,6 +29,7 @@ async function processRow(row, { performLoginAndGetProgress }) {
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     // Đánh dấu "đang học" để tránh bot khác pick up cùng lúc
+    // (sẽ bị ghi đè ngay khi đăng nhập thành công trong navigator.js)
     setCol(row, COL.status, STATUS.studying);
     await row.save();
 
@@ -44,7 +45,7 @@ async function processRow(row, { performLoginAndGetProgress }) {
 
     if (result.success) {
       // STATUS 'Chưa thi' đã được set bởi messenger.js
-      setCol(row, COL.fullname, result.fullName || '');
+      // fullName đã được ghi vào sheet ngay sau khi đăng nhập (trong navigator.js)
       await row.save();
       console.log(`[${user}] ✅ Hoàn thành ── ${result.fullName} ── Tiến độ: ${result.progress || 'Không xác định'}`);
       return; // xong, thoát
