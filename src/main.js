@@ -3,9 +3,8 @@ const { GoogleSpreadsheet } = require('google-spreadsheet');
 const { JWT } = require('google-auth-library');
 const config = require('./config');
 const { performLoginAndGetProgress } = require('./browser');
-const { processRow } = require('./processor');
-const { processQuizRow } = require('./processor');
-const { COL, STATUS, getCol } = require('./columns');
+const { processRow, processQuizRow } = require('./processor');
+const { COL, STATUS, getCol, setCol } = require('./columns');
 
 // ── Google Auth ──────────────────────────────────────────────────────────────
 function initAuth() {
@@ -27,25 +26,6 @@ function initAuth() {
   });
 }
 
-// ── Giới hạn concurrent ──────────────────────────────────────────────────────
-function createLimiter(concurrency) {
-  let active = 0;
-  const queue = [];
-  const next = () => {
-    if (active >= concurrency || queue.length === 0) return;
-    active++;
-    const { fn, resolve, reject } = queue.shift();
-    Promise.resolve().then(fn).then(
-      val => { active--; resolve(val); next(); },
-      err => { active--; reject(err); next(); }
-    );
-  };
-  return fn => new Promise((resolve, reject) => {
-    queue.push({ fn, resolve, reject });
-    next();
-  });
-}
-
 // ── Vòng lặp chính ──────────────────────────────────────────────────────────
 async function run() {
   const auth = initAuth();
@@ -61,51 +41,72 @@ async function run() {
 
   const sheet = doc.sheetsByIndex[0];
 
-  // dev → luôn 1 tài khoản để quan sát UI; start/prod → theo config
   const IS_DEV     = process.env.NODE_ENV === 'development';
   const concurrent = IS_DEV ? config.CONCURRENT_DEV : config.CONCURRENT_LIMIT;
-  const limit      = createLimiter(concurrent);
 
-  console.log(`🤖 Bot khởi động | Chế độ: ${IS_DEV ? 'DEV (1 tài khoản)' : `PROD (${concurrent} tài khoản song song)`}`);
+  console.log(`🤖 Bot khởi động | Chế độ: ${IS_DEV ? 'DEV (1 tài khoản)' : `PROD (tối đa ${concurrent} tài khoản song song)`}`);
   console.log(`⏳ Kiểm tra sheet mỗi ${config.POLL_INTERVAL_MS / 1000}s`);
-  console.log(`🔍 Tìm các hàng có STATUS = "${STATUS.pending}"
-`);
+  console.log(`🔍 Tìm các hàng có STATUS = "${STATUS.pending}" hoặc "${STATUS.exam_pending}"\n`);
 
+  // ── Worker pool: track số slot đang bận ─────────────────────────────────
+  // Set lưu username đang được xử lý → tránh pick up cùng 1 mã 2 lần
+  const activeUsers = new Set();
+
+  // Hàm dispatch 1 row vào pool (fire-and-forget, tự giải phóng slot khi xong)
+  function dispatch(row, type) {
+    const user = getCol(row, COL.username);
+    activeUsers.add(user);
+
+    const task = type === 'quiz'
+      ? processQuizRow(row, { performLoginAndGetProgress })
+      : processRow(row, { performLoginAndGetProgress });
+
+    task
+      .catch(err => console.error(`[${user}] ❌ Lỗi không bắt được: ${err.message}`))
+      .finally(() => {
+        activeUsers.delete(user);
+        console.log(`[${user}] 🔓 Slot giải phóng | Đang bận: ${activeUsers.size}/${concurrent}`);
+      });
+  }
+
+  // ── Poll liên tục ─────────────────────────────────────────────────────────
   while (true) {
     try {
-      const rows = await sheet.getRows();
+      // Còn slot trống thì mới đọc sheet (tránh đọc vô ích khi full)
+      const freeSlots = concurrent - activeUsers.size;
 
-      // Lọc hàng cần học: STATUS === 'đăng nhập'
-      const hangCanHoc = rows.filter(r => {
-        const status = getCol(r, COL.status).toLowerCase();
-        return status === STATUS.pending.toLowerCase();
-      });
+      if (freeSlots > 0) {
+        const rows = await sheet.getRows();
 
-      // Lọc hàng cần thi: STATUS === 'Bắt đầu thi'
-      const hangCanThi = rows.filter(r => {
-        const status = getCol(r, COL.status).toLowerCase();
-        return status === STATUS.exam_pending.toLowerCase();
-      });
+        // Lọc hàng chưa được xử lý và chưa nằm trong activeUsers
+        const canHoc = rows.filter(r => {
+          const status = getCol(r, COL.status).toLowerCase();
+          const user   = getCol(r, COL.username);
+          return status === STATUS.pending.toLowerCase() && !activeUsers.has(user);
+        });
 
-      if (hangCanHoc.length === 0 && hangCanThi.length === 0) {
-        // Không log khi rảnh để tránh spam
-      } else {
-        if (hangCanHoc.length > 0) {
-          console.log(`📋 Tìm thấy ${hangCanHoc.length} hàng cần HỌC...`);
-          await Promise.all(
-            hangCanHoc.map(row => limit(() => processRow(row, { performLoginAndGetProgress })))
-          );
+        const canThi = rows.filter(r => {
+          const status = getCol(r, COL.status).toLowerCase();
+          const user   = getCol(r, COL.username);
+          return status === STATUS.exam_pending.toLowerCase() && !activeUsers.has(user);
+        });
+
+        // Dispatch tối đa freeSlots mã mới (học ưu tiên trước, thi sau)
+        const toDispatch = [...canHoc.map(r => ({ row: r, type: 'learn' })),
+                            ...canThi.map(r => ({ row: r, type: 'quiz'  }))]
+                           .slice(0, freeSlots);
+
+        if (toDispatch.length > 0) {
+          console.log(`📋 Slot trống: ${freeSlots} | Dispatch ${toDispatch.length} mã mới | Đang chạy: ${activeUsers.size}`);
+          for (const { row, type } of toDispatch) {
+            const user = getCol(row, COL.username);
+            console.log(`  ▶ [${user}] (${type === 'quiz' ? 'thi' : 'học'})`);
+            dispatch(row, type);
+          }
         }
-        if (hangCanThi.length > 0) {
-          console.log(`🎯 Tìm thấy ${hangCanThi.length} hàng cần THI...`);
-          await Promise.all(
-            hangCanThi.map(row => limit(() => processQuizRow(row, { performLoginAndGetProgress })))
-          );
-        }
-        console.log(`✅ Xong đợt này\n`);
       }
     } catch (err) {
-      console.error('❌ Lỗi vòng lặp:', err.message);
+      console.error('❌ Lỗi vòng poll:', err.message);
     }
 
     await new Promise(r => setTimeout(r, config.POLL_INTERVAL_MS));
