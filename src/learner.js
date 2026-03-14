@@ -7,6 +7,7 @@
 //   - Click "Phần tiếp theo" để chuyển bài
 const config = require('./config');
 const { sendCompletionMessage } = require('./messenger');
+const { COL, STATUS, setCol } = require('./columns');
 
 const LESSON_SEND_MSG      = 3;
 const IS_DEV               = process.env.NODE_ENV === 'development';
@@ -139,13 +140,19 @@ async function goNextLesson(page, username) {
 }
 
 // ─── Vòng lặp học 1 bài ──────────────────────────────────────────────────────
-async function learnOneLesson(page, username, lessonNo) {
+async function learnOneLesson(page, username, lessonNo, row) {
   console.log(`[${username}] 🚀 Học bài ${lessonNo} | ${config.SPEED_RATE}x`);
 
-  let lastSlide  = 0;
-  let stuckCount = 0;
-  let loopCount  = 0;
-  let lastNextMs = 0;
+  // Cập nhật trạng thái ngay khi bắt đầu bài
+  if (row) {
+    setCol(row, COL.status, `Đang học bài ${lessonNo}...`);
+    await row.save().catch(() => {});
+  }
+
+  let lastSlide      = 0;
+  let stuckCount     = 0;
+  let loopCount      = 0;
+  let lastNextMs     = 0;
 
   while (true) {
     if (!page.url().includes('player.php')) {
@@ -211,7 +218,7 @@ async function learnAllLessons(page, username, row) {
     await page.waitForTimeout(1500);
     await setSpeed(page, username);
 
-    const result = await learnOneLesson(page, username, lesson);
+    const result = await learnOneLesson(page, username, lesson, row);
     if (typeof result === 'string' && result !== 'left') {
       summary += `Bài ${lesson}: ${result} | `;
     }

@@ -10,6 +10,15 @@
 const { findAnswer, findMatchingOption } = require('./quiz-data');
 const { COL, STATUS, setCol } = require('./columns');
 
+// Lớp lỗi đặc biệt: học viên chưa mở được trang thi (chưa đủ điều kiện)
+// processor.js bắt lỗi này để set STATUS.done thay vì STATUS.error
+class QuizNotReadyError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'QuizNotReadyError';
+  }
+}
+
 const COURSE_URL = 'http://elearning.vina-link.com.vn/course/view.php?id=10';
 const QUIZ_URL   = 'http://elearning.vina-link.com.vn/mod/quiz/view.php?id=70';
 
@@ -32,7 +41,29 @@ async function runQuiz(page, username, row) {
     // ── B2: Goto trực tiếp URL quiz — tránh mọi vấn đề click hidden ──────────
     console.log(`[${username}] B2: Vào trang trắc nghiệm...`);
     await page.goto(QUIZ_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
-    console.log(`[${username}] ✓ Trang quiz: ${page.url()}`);
+
+    // Kiểm tra (A): bị redirect ra khỏi trang quiz
+    // → Moodle không cho vào vì chưa đủ điều kiện
+    const currentUrl = page.url();
+    if (!currentUrl.includes('mod/quiz')) {
+      console.log(`[${username}] ⚠ Bài thi chưa mở (redirect về: ${currentUrl})`);
+      throw new QuizNotReadyError('Bài thi chưa mở — học viên chưa đủ điều kiện thi');
+    }
+
+    // Kiểm tra (B): vào được trang quiz nhưng module bị dimmed/hạn chế
+    // Xảy ra khi Đào Tạo Viên chưa duyệt → Moodle hiển thị badge "Hạn chế"
+    // thay vì redirect, nên không bị bắt bởi kiểm tra (A) ở trên
+    const restrictedMsg = await page.evaluate(() => {
+      const el = document.querySelector('.availabilityinfo.isrestricted');
+      return el ? el.innerText.trim() : null;
+    }).catch(() => null);
+
+    if (restrictedMsg) {
+      console.log(`[${username}] ⚠ Bài thi bị hạn chế: "${restrictedMsg}"`);
+      throw new QuizNotReadyError('Bài thi bị hạn chế — chưa được Đào Tạo Viên duyệt');
+    }
+
+    console.log(`[${username}] ✓ Trang quiz: ${currentUrl}`);
 
     // ── B3+B4: Bắt đầu mới hoặc Tiếp tục lần kiểm tra ───────────────────────
     // (A) Lần đầu:   "Bắt đầu làm bài"                  → popup confirm → vào câu hỏi
@@ -72,7 +103,10 @@ async function runQuiz(page, username, row) {
       await confirmBtn3.click();
       console.log(`[${username}] ✓ Đã xác nhận bắt đầu thi`);
     } else {
-      throw new Error('Không tìm thấy button bắt đầu, tiếp tục hoặc thi lại');
+      // Không có button nào → trang quiz tồn tại nhưng chưa cho phép thi
+      // (có thể do chưa hoàn thành module trước, hoặc chỉ hiển thị kết quả cũ)
+      console.log(`[${username}] ⚠ B3: Không tìm thấy button bắt đầu/tiếp tục/thi lại`);
+      throw new QuizNotReadyError('Không tìm thấy button bắt đầu, tiếp tục hoặc thi lại — bài thi chưa mở');
     }
 
     // Chờ trang câu hỏi load
@@ -201,24 +235,35 @@ async function runQuiz(page, username, row) {
       console.log(`[${username}] ⚠ ${notFound} câu không tìm thấy đáp án trong kho dữ liệu`);
     }
 
-    // ── B7: Quay về khóa học → click "5. Bản cam kết..." ──────────────────
+    // ── B7: Mở "5. Bản cam kết..." — chặn download ──────────────────────────
+    // Link trỏ tới file DOCX: Moodle load view.php → redirect sang pluginfile.php
+    // → Chrome trigger download dialog → waitForURL / waitForNavigation timeout.
+    // Giải pháp: abort MỌI navigation xảy ra SAU KHI đã gửi request goto,
+    // bằng cách lắng nghe sự kiện 'request' và abort ngay request redirect đó.
+    // Moodle vẫn ghi nhận lượt truy cập khi nhận GET view.php, dù redirect bị chặn.
+    const CAM_KET_URL = 'http://elearning.vina-link.com.vn/mod/resource/view.php?id=72';
+
     console.log(`[${username}] B7: Quay về khóa học...`);
-    const backLink = page.locator(`a[href="${COURSE_URL}"][title="Đào tạo cơ bản"], a[href="${COURSE_URL}"]`).first();
-    await backLink.waitFor({ state: 'visible', timeout: 15000 });
-    await backLink.click();
-    await page.waitForURL('**/course/view.php?id=10**', { timeout: 30000 });
-    await page.waitForTimeout(1500);
+    await page.goto(COURSE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 });
+    await page.waitForTimeout(1000);
 
-    console.log(`[${username}] B7: Click "5. Bản cam kết học hiểu..."...`);
-    const camKetLink = page.locator([
-      'a[href*="mod/resource/view.php?id=72"]',
-      'a:has-text("Bản cam kết học hiểu đào tạo cơ bản")',
-      'a:has-text("Mẫu số 13")',
-    ].join(', ')).first();
+    console.log(`[${username}] B7: Mở bản cam kết (chặn download)...`);
 
-    await page.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-    await camKetLink.waitFor({ state: 'visible', timeout: 15000 });
-    await camKetLink.click();
+    // Abort bất kỳ request nào tới pluginfile.php (URL Moodle dùng để serve file)
+    // Dùng context-level route để chắc chắn bắt được dù có redirect chain
+    const blockFileDownload = route => route.abort('aborted');
+    await page.context().route('**/pluginfile.php**', blockFileDownload);
+
+    try {
+      await page.goto(CAM_KET_URL, { waitUntil: 'commit', timeout: 15000 });
+      console.log(`[${username}] ✓ Đã truy cập bản cam kết`);
+    } catch (_) {
+      // Playwright có thể throw khi navigation bị abort ở redirect — bỏ qua
+      console.log(`[${username}] ✓ Đã mở bản cam kết (redirect bị chặn đúng cách)`);
+    } finally {
+      await page.context().unroute('**/pluginfile.php**', blockFileDownload).catch(() => {});
+    }
+
     console.log(`[${username}] ✅ Hoàn thành toàn bộ chương trình!`);
 
     // Cập nhật trạng thái cuối
@@ -231,6 +276,19 @@ async function runQuiz(page, username, row) {
     return { success: true, score };
 
   } catch (err) {
+    // Phân biệt 2 loại lỗi:
+    //   QuizNotReadyError → học viên chưa đủ điều kiện thi, không phải lỗi kỹ thuật
+    //   Error thường      → lỗi thực sự, cần set STATUS.error
+    if (err.name === 'QuizNotReadyError') {
+      console.log(`[${username}] ℹ️ Bài thi chưa sẵn sàng: ${err.message}`);
+      if (row) {
+        setCol(row, COL.status, STATUS.done);  // quay về 'Chưa thi'
+        await row.save();
+        console.log(`[${username}] ↩ Trạng thái hoàn lại: "${STATUS.done}"`);
+      }
+      return { success: false, notReady: true, error: err.message };
+    }
+
     console.error(`[${username}] ❌ Lỗi thi: ${err.message}`);
     if (row) {
       setCol(row, COL.status, STATUS.error);
@@ -240,4 +298,4 @@ async function runQuiz(page, username, row) {
   }
 }
 
-module.exports = { runQuiz };
+module.exports = { runQuiz, QuizNotReadyError };

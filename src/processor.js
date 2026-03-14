@@ -77,7 +77,7 @@ async function processRow(row, { performLoginAndGetProgress }) {
 module.exports = { processRow };
 
 // ─── Xử lý hàng thi (STATUS = 'Bắt đầu thi') ────────────────────────────────
-const { runQuiz }   = require('./quizzer');
+const { runQuiz, QuizNotReadyError } = require('./quizzer');
 const { loginOnly } = require('./navigator');
 const { chromium }  = require('playwright');
 
@@ -124,12 +124,26 @@ async function processQuizRow(row, _deps) {
 
     setCol(row, COL.fullname, fullName || '');
     await row.save();
-    console.log(`[${user}] ✅ Thi xong | Điểm: ${result.score || 'N/A'}`);
+
+    if (result.notReady) {
+      // runQuiz đã set STATUS.done và save rồi — chỉ cần log
+      console.log(`[${user}] ℹ️ Chưa thể thi → trạng thái hoàn về "${STATUS.done}"`);
+    } else {
+      console.log(`[${user}] ✅ Thi xong | Điểm: ${result.score || 'N/A'}`);
+    }
 
   } catch (err) {
-    console.error(`[${user}] ❌ Lỗi thi: ${err.message}`);
-    setCol(row, COL.status, STATUS.error);
-    await row.save();
+    // Phân biệt lỗi chưa sẵn sàng thi với lỗi kỹ thuật thực sự
+    if (err instanceof QuizNotReadyError || err.name === 'QuizNotReadyError') {
+      console.log(`[${user}] ℹ️ Bài thi chưa sẵn sàng: ${err.message}`);
+      setCol(row, COL.status, STATUS.done);  // hoàn về 'Chưa thi'
+      await row.save();
+      console.log(`[${user}] ↩ Trạng thái hoàn lại: "${STATUS.done}"`);
+    } else {
+      console.error(`[${user}] ❌ Lỗi thi: ${err.message}`);
+      setCol(row, COL.status, STATUS.error);
+      await row.save();
+    }
   } finally {
     if (browser) await browser.close().catch(() => {});
   }

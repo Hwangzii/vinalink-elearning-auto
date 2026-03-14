@@ -31,7 +31,7 @@ const STATUS = {
   studying:     'Đang học...',     // 🟡 đang học
   taking_exam:  'Đang thi...',  // 🟡 đang làm bài thi
   done:         'Chưa thi',     // ✅ học xong + nhắn tin → chờ thi
-  exam_done:    'Đã thi xong',  // ✅ thi xong + bản cam kết
+  exam_done:    'Hoàn thành',   // ✅ thi xong + bản cam kết
   failed:       'Sai ID/Mật khẩu', // ❌ sai tài khoản
   error:        'Lỗi',          // ❌ lỗi khác
 };
